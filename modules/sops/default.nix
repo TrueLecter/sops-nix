@@ -8,6 +8,8 @@ let
   sops-install-secrets = (pkgs.callPackage ../.. {}).sops-install-secrets;
   regularSecrets = lib.filterAttrs (_: v: !v.neededForUsers) cfg.secrets;
   secretsForUsers = lib.filterAttrs (_: v: v.neededForUsers) cfg.secrets;
+  defaultSecretsSymlink = "${lib.optionalString pkgs.stdenv.isDarwin "/var"}/run/secrets";
+  defaultUsersSecretsSymlink = "${lib.optionalString pkgs.stdenv.isDarwin "/var"}/run/secrets-for-users";
   secretType = types.submodule ({ config, ... }: {
     config = {
       sopsFile = lib.mkOptionDefault cfg.defaultSopsFile;
@@ -32,7 +34,7 @@ let
       };
       path = mkOption {
         type = types.str;
-        default = if config.neededForUsers then "/run/secrets-for-users/${config.name}" else "/run/secrets/${config.name}";
+        default = if config.neededForUsers then "${defaultUsersSecretsSymlink}/${config.name}" else "${defaultSecretsSymlink}/${config.name}";
         defaultText = "/run/secrets-for-users/$name when neededForUsers is set, /run/secrets/$name when otherwise.";
         description = ''
           Path where secrets are symlinked to.
@@ -109,8 +111,8 @@ let
     text = builtins.toJSON ({
       secrets = builtins.attrValues secrets;
       # Does this need to be configurable?
-      secretsMountPoint = "/run/secrets.d";
-      symlinkPath = "/run/secrets";
+      secretsMountPoint = "${lib.optionalString pkgs.stdenv.isDarwin "/var"}/run/secrets.d";
+      symlinkPath = defaultSecretsSymlink;
       keepGenerations = cfg.keepGenerations;
       gnupgHome = cfg.gnupg.home;
       sshKeyPaths = cfg.gnupg.sshKeyPaths;
@@ -129,7 +131,7 @@ let
   manifest = manifestFor "" regularSecrets {};
   manifestForUsers = manifestFor "-for-users" secretsForUsers {
     secretsMountPoint = "/run/secrets-for-users.d";
-    symlinkPath = "/run/secrets-for-users";
+    symlinkPath = defaultUsersSecretsSymlink;
   };
 
   withEnvironment = sopsCall: if cfg.environment == {} then sopsCall else ''
