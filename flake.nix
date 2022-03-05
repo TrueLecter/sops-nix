@@ -23,6 +23,8 @@
       };
     nixosModules.sops = import ./modules/sops;
     nixosModule = self.nixosModules.sops;
+    darwinModules.sops = import ./modules/sops;
+    darwinModule = self.darwinModules.sops;
     packages = forAllSystems (system: import ./default.nix {
       pkgs = import nixpkgs { inherit system; };
     });
