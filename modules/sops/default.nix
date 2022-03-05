@@ -142,7 +142,7 @@ let
   '';
   # Skip ssh keys deployed with sops to avoid a catch 22
   defaultImportKeys = algo:
-    if config.services.openssh.enable then
+    if (pkgs.stdenv.isLinux && config.services.openssh.enable) then
       map (e: e.path) (lib.filter (e: e.type == algo && !(lib.hasPrefix "/run/secrets" e.path)) config.services.openssh.hostKeys)
     else
       [];
