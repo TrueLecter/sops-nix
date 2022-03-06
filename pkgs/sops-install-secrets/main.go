@@ -24,7 +24,6 @@ import (
 
 	"github.com/mozilla-services/yaml"
 	"go.mozilla.org/sops/v3/decrypt"
-	"golang.org/x/sys/unix"
 )
 
 type secret struct {
@@ -116,28 +115,6 @@ type appContext struct {
 	ignorePasswd bool
 }
 
-func secureSymlinkChown(symlinkToCheck, expectedTarget string, owner, group int) error {
-	fd, err := unix.Open(symlinkToCheck, unix.O_CLOEXEC|unix.O_PATH|unix.O_NOFOLLOW, 0)
-	if err != nil {
-		return fmt.Errorf("Failed to open %s: %w", symlinkToCheck, err)
-	}
-	defer unix.Close(fd)
-
-	buf := make([]byte, len(expectedTarget)+1) // oversize by one to detect trunc
-	n, err := unix.Readlinkat(fd, "", buf)
-	if err != nil {
-		return fmt.Errorf("couldn't readlinkat %s", symlinkToCheck)
-	}
-	if n > len(expectedTarget) || string(buf[:n]) != expectedTarget {
-		return fmt.Errorf("symlink %s does not point to %s", symlinkToCheck, expectedTarget)
-	}
-	err = unix.Fchownat(fd, "", owner, group, unix.AT_EMPTY_PATH)
-	if err != nil {
-		return fmt.Errorf("cannot change owner of '%s' to %d/%d: %w", symlinkToCheck, owner, group, err)
-	}
-	return nil
-}
-
 func readManifest(path string) (*manifest, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -170,7 +147,7 @@ func symlinkSecret(targetFile string, secret *secret) error {
 			if err := os.Symlink(targetFile, secret.Path); err != nil {
 				return fmt.Errorf("Cannot create symlink '%s': %w", secret.Path, err)
 			}
-			if err := secureSymlinkChown(secret.Path, targetFile, secret.owner, secret.group); err != nil {
+			if err := SecureSymlinkChown(secret.Path, targetFile, secret.owner, secret.group); err != nil {
 				return fmt.Errorf("Cannot chown symlink '%s': %w", secret.Path, err)
 			}
 			return nil
