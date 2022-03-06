@@ -10,14 +10,14 @@ buildGoModule {
   # requires root privileges for tests
   doCheck = false;
 
-  passthru.tests = import ./nixos-test.nix {
+  passthru.tests = lib.optionalAttrs stdenv.isLinux (import ./nixos-test.nix {
     makeTest = import (path + "/nixos/tests/make-test-python.nix");
     inherit pkgs;
-  };
+  });
 
-  outputs = [ "out" "unittest" ];
+  outputs = [ "out" ] ++ lib.optionals stdenv.isLinux [ "unittest" ];
 
-  postBuild = ''
+  postBuild = lib.optionalString stdenv.isLinux ''
     go test -c ./pkgs/sops-install-secrets
     install -D ./sops-install-secrets.test $unittest/bin/sops-install-secrets.test
     # newer versions of nixpkgs no longer require this step

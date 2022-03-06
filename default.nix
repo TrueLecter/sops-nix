@@ -11,6 +11,7 @@ in rec {
     Also see https://github.com/Mic92/sops-nix/issues/98
   '' pkgs.callPackage ./pkgs/sops-pgp-hook { };
   sops-import-keys-hook = pkgs.callPackage ./pkgs/sops-import-keys-hook { };
+  inherit sops-install-secrets;
 
   # backwards compatibility
   inherit (pkgs) ssh-to-pgp;
