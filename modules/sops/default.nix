@@ -289,7 +289,7 @@ in {
 
       sops.environment.SOPS_GPG_EXEC = mkIf (cfg.gnupg.home != null) (mkDefault "${pkgs.gnupg}/bin/gpg");
 
-      system.activationScripts = {
+      system.activationScripts = optionalAttrs pkgs.stdenv.isLinux {
         setupSecretsForUsers = mkIf (secretsForUsers != {}) (stringAfter ([ "specialfs" ] ++ optional cfg.age.generateKey "generate-age-key") ''
           [ -e /run/current-system ] || echo setting up secrets for users...
           ${withEnvironment "${sops-install-secrets}/bin/sops-install-secrets -ignore-passwd ${manifestForUsers}"}
@@ -316,6 +316,23 @@ in {
             ${pkgs.age}/bin/age-keygen -o ${cfg.age.keyFile}
           fi
         '');
+      } // optionalAttrs pkgs.stdenv.isDarwin {
+        preActivation.text = optionalString (cfg.age.generateKey) ''
+          if [[ ! -f '${cfg.age.keyFile}' ]]; then
+            echo generating machine-specific age key...
+            mkdir -p $(dirname ${cfg.age.keyFile})
+            # age-keygen sets 0600 by default, no need to chmod.
+            ${pkgs.age}/bin/age-keygen -o ${cfg.age.keyFile}
+          fi
+        '';
+        applications.text = optionalString (regularSecrets != {}) ''
+           echo setting up secrets...
+           ${withEnvironment "${sops-install-secrets}/bin/sops-install-secrets ${manifest}"}
+           '';
+        preUserActivation.text = optionalString (secretsForUsers != {}) ''
+          echo setting up secrets for users...
+          ${withEnvironment "${sops-install-secrets}/bin/sops-install-secrets -ignore-passwd ${manifestForUsers}"}
+        '';
       };
     })
     {
