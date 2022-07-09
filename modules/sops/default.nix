@@ -327,11 +327,11 @@ in {
         '';
         applications.text = optionalString (regularSecrets != {}) ''
            echo setting up secrets...
-           ${withEnvironment "${sops-install-secrets}/bin/sops-install-secrets ${manifest}"}
+           ${withEnvironment "sudo ${sops-install-secrets}/bin/sops-install-secrets ${manifest}"}
            '';
         preUserActivation.text = optionalString (secretsForUsers != {}) ''
           echo setting up secrets for users...
-          ${withEnvironment "${sops-install-secrets}/bin/sops-install-secrets -ignore-passwd ${manifestForUsers}"}
+          ${withEnvironment "sudo ${sops-install-secrets}/bin/sops-install-secrets -ignore-passwd ${manifestForUsers}"}
         '';
       };
     })
