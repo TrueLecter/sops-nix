@@ -30,6 +30,10 @@
       sops = import ./modules/sops;
       default = self.nixosModules.sops;
     };
+    darwinModules = {
+      sops = import ./modules/darwin;
+      default = self.darwinModules.sops;
+    };
     homeManagerModules.sops = import ./modules/home-manager/sops.nix;
     homeManagerModule = self.homeManagerModules.sops;
     packages = forAllSystems (system:
