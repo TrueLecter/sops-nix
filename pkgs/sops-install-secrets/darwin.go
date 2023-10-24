@@ -53,8 +53,8 @@ func SecureSymlinkChown(symlinkToCheck string, expectedTarget string, owner, gro
 // mydev=`hdiutil attach -nomount ram://$NUMSECTORS`
 // newfs_hfs $mydev
 // mount -t hfs $mydev /tmp/mymount
-func MountSecretFs(mountpoint string, keysGid int, useTmpfs bool, userMode bool) error {
-	if useTmpfs {
+func MountSecretFs(mountpoint string, keysGid int, _useTmpfs bool, userMode bool) error {
+	if _useTmpfs {
 		return fmt.Errorf("tmpfs is not supported on darwin")
 	}
 	if err := os.MkdirAll(mountpoint, 0751); err != nil {

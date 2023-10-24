@@ -214,7 +214,7 @@ uid           [ unknown] root <root@localhost>
 The fingerprint here is `9F89C5F69A10281A835014B09C3DC61F752087EF`.
 </details>
 
-Your `age` public key or GPG fingerprint can be written to your [`.sops.yaml`](https://github.com/mozilla/sops#using-sops-YAML-conf-to-select-kms-pgp-for-new-files) in the root of your configuration directory or repository:
+Your `age` public key or GPG fingerprint can be written to your [`.sops.yaml`](https://github.com/getsops/sops#using-sops-yaml-conf-to-select-kms-pgp-and-age-for-new-files) in the root of your configuration directory or repository:
 ```yaml
 # This example uses YAML anchors which allows reuse of multiple keys 
 # without having to repeat yourself.
@@ -495,30 +495,11 @@ Consider the following nixos configuration example:
   # 0 - none (---)
   sops.secrets.example-secret.mode = "0440";
   # Either a user id or group name representation of the secret owner
-  # It is recommended to get the user name from `config.users.<?name>.name` to avoid misconfiguration
+  # It is recommended to get the user name from `config.users.users.<?name>.name` to avoid misconfiguration
   sops.secrets.example-secret.owner = config.users.users.nobody.name;
   # Either the group id or group name representation of the secret group
-  # It is recommended to get the group name from `config.users.<?name>.group` to avoid misconfiguration
+  # It is recommended to get the group name from `config.users.users.<?name>.group` to avoid misconfiguration
   sops.secrets.example-secret.group = config.users.users.nobody.group;
-}
-```
-
-To access secrets each non-root process/service needs to be part of the keys group.
-For systemd services this can be achieved as following:
-
-```nix
-{
-  systemd.services.some-service = {
-    serviceConfig.SupplementaryGroups = [ config.users.groups.keys.name ];
-  };
-}
-```
-
-For login or system users this can be done like this:
-
-```nix
-{
-  users.users.example-user.extraGroups = [ config.users.groups.keys.name ];
 }
 ```
 
@@ -542,10 +523,6 @@ the service needs a token and a SSH private key to function.</summary>
       pkgs.git
     ];
 
-  };
-
-  systemd.services.buildkite-agent-builder = {
-    serviceConfig.SupplementaryGroups = [ config.users.groups.keys.name ];
   };
 
   sops.secrets.buildkite-token.owner = config.users.buildkite-agent-builder.name;
@@ -931,6 +908,59 @@ securely in your version control, e.g.
 [git-agecrypt](https://github.com/vlaci/git-agecrypt). These types of solutions
 can be used together with sops-nix.
 
+## Templates
+
+If your setup requires embedding secrets within a configuration file, the `template` feature of `sops-nix` provides a seamless way to do this. 
+
+Here's how to use it:
+
+1. **Define Your Secret**
+
+   Specify the secrets you intend to use. This will be encrypted and managed securely by `sops-nix`.
+
+   ```nix
+   {
+     sops.secrets.your-secret = { };
+   }
+   ```
+
+2. **Use Templates for Configuration with Secrets**
+
+   Create a template for your configuration file and utilize the placeholder where you'd like the secret to be inserted. 
+   During the activation phase, `sops-nix` will substitute the placeholder with the actual secret content.
+
+   ```nix
+   {
+     sops.templates."your-config-with-secrets.toml".content = ''
+       password = "${config.sops.placeholder.your-secret}"
+     '';
+   }
+   ```
+
+   You can also define ownership properties for the configuration file:
+
+   ```nix
+   { 
+     sops.templates."your-config-with-secrets.toml".owner = "serviceuser";
+   }
+   ```
+
+3. **Reference the Rendered Configuration in Services**
+
+   When defining a service (e.g., using `systemd`), refer to the rendered configuration (with secrets in place) by leveraging the `.path` attribute.
+
+   ```nix
+   {
+     systemd.services.myservice = {
+       # ... (any other service attributes)
+
+       serviceConfig = {
+         ExecStart = "${pkgs.myservice}/bin/myservice --config ${config.sops.templates."your-config-with-secrets.toml".path}";
+         User = "serviceuser";
+       };
+     };
+   }
+   ```
 
 ## Related projects
 

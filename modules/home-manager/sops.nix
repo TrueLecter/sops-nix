@@ -217,7 +217,7 @@ in {
   config = lib.mkIf (cfg.secrets != {}) {
     assertions = [{
       assertion = cfg.gnupg.home != null || cfg.gnupg.sshKeyPaths != [] || cfg.age.keyFile != null || cfg.age.sshKeyPaths != [];
-      message = "No key source configurated for sops";
+      message = "No key source configured for sops. Either set services.openssh.enable or set sops.age.keyFile or sops.gnupg.home";
     } {
       assertion = !(cfg.gnupg.home != null && cfg.gnupg.sshKeyPaths != []);
       message = "Exactly one of sops.gnupg.home and sops.gnupg.sshKeyPaths must be set";
@@ -241,7 +241,7 @@ in {
         Type = "oneshot";
         ExecStart = script;
       };
-      Install.WantedBy = if cfg.gnupg.home != null then [ "graphical-session.target" ] else [ "default.target" ];
+      Install.WantedBy = if cfg.gnupg.home != null then [ "graphical-session-pre.target" ] else [ "default.target" ];
     };
 
     launchd.agents.sops-nix = {
