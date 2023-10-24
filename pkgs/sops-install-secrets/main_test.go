@@ -1,11 +1,11 @@
-// +build linux
+//go:build linux || darwin
+// +build linux darwin
 
 package main
 
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -63,7 +64,7 @@ func (dir testDir) Remove() {
 }
 
 func newTestDir(t *testing.T) testDir {
-	tempdir, err := ioutil.TempDir("", "symlinkDir")
+	tempdir, err := os.MkdirTemp("", "symlinkDir")
 	ok(t, err)
 	return testDir{tempdir, path.Join(tempdir, "secrets.d"), path.Join(tempdir, "secrets")}
 }
@@ -107,9 +108,10 @@ func testGPG(t *testing.T) {
 		Path:         path.Join(testdir.path, "test-target"),
 		Mode:         "0400",
 		RestartUnits: []string{"affected-service"},
+		ReloadUnits:  []string{"affected-reload-service"},
 	}
 
-	var jsonSecret, binarySecret secret
+	var jsonSecret, binarySecret, dotenvSecret, iniSecret secret
 	// should not create a symlink
 	jsonSecret = yamlSecret
 	jsonSecret.Name = "test2"
@@ -126,8 +128,25 @@ func testGPG(t *testing.T) {
 	binarySecret.SopsFile = path.Join(assets, "secrets.bin")
 	binarySecret.Path = path.Join(testdir.secretsPath, "test3")
 
+	dotenvSecret = yamlSecret
+	dotenvSecret.Name = "test4"
+	dotenvSecret.Owner = "root"
+	dotenvSecret.Group = "root"
+	dotenvSecret.Format = "dotenv"
+	dotenvSecret.SopsFile = path.Join(assets, "secrets.env")
+	dotenvSecret.Path = path.Join(testdir.secretsPath, "test4")
+
+	iniSecret = yamlSecret
+	iniSecret.Name = "test5"
+	iniSecret.Owner = "root"
+	iniSecret.Group = "root"
+	iniSecret.Format = "ini"
+	iniSecret.SopsFile = path.Join(assets, "secrets.ini")
+	iniSecret.Path = path.Join(testdir.secretsPath, "test5")
+
+
 	manifest := manifest{
-		Secrets:           []secret{yamlSecret, jsonSecret, binarySecret},
+		Secrets:           []secret{yamlSecret, jsonSecret, binarySecret, dotenvSecret, iniSecret},
 		SecretsMountPoint: testdir.secretsPath,
 		SymlinkPath:       testdir.symlinkPath,
 		GnupgHome:         gpgHome,
@@ -153,7 +172,7 @@ func testGPG(t *testing.T) {
 	equals(t, 0400, int(yamlStat.Mode().Perm()))
 	stat, success := yamlStat.Sys().(*syscall.Stat_t)
 	equals(t, true, success)
-	content, err := ioutil.ReadFile(yamlSecret.Path)
+	content, err := os.ReadFile(yamlSecret.Path)
 	ok(t, err)
 	equals(t, "test_value", string(content))
 
@@ -174,7 +193,7 @@ func testGPG(t *testing.T) {
 		equals(t, 0, int(stat.Gid))
 	}
 
-	content, err = ioutil.ReadFile(binarySecret.Path)
+	content, err = os.ReadFile(binarySecret.Path)
 	ok(t, err)
 	equals(t, 13, len(content))
 
@@ -205,6 +224,7 @@ func testSSHKey(t *testing.T) {
 		Path:         target,
 		Mode:         "0400",
 		RestartUnits: []string{"affected-service"},
+		ReloadUnits:  []string{"affected-reload-service"},
 	}
 
 	m := manifest{
@@ -237,6 +257,7 @@ func TestAge(t *testing.T) {
 		Path:         target,
 		Mode:         "0400",
 		RestartUnits: []string{"affected-service"},
+		ReloadUnits:  []string{"affected-reload-service"},
 	}
 
 	m := manifest{
@@ -269,6 +290,7 @@ func TestAgeWithSSH(t *testing.T) {
 		Path:         target,
 		Mode:         "0400",
 		RestartUnits: []string{"affected-service"},
+		ReloadUnits:  []string{"affected-reload-service"},
 	}
 
 	m := manifest{
@@ -302,6 +324,7 @@ func TestValidateManifest(t *testing.T) {
 		Path:         path.Join(testdir.path, "test-target"),
 		Mode:         "0400",
 		RestartUnits: []string{},
+		ReloadUnits:  []string{},
 	}
 
 	m := manifest{
@@ -315,4 +338,17 @@ func TestValidateManifest(t *testing.T) {
 
 	ok(t, installSecrets([]string{"sops-install-secrets", "-check-mode=manifest", path}))
 	ok(t, installSecrets([]string{"sops-install-secrets", "-check-mode=sopsfile", path}))
+}
+
+func TestIsValidFormat(t *testing.T) {
+	generateCase := func(input string, mustBe bool) {
+		result := IsValidFormat(input)
+		if result != mustBe {
+			t.Errorf("input %s must return %v but returned %v", input, mustBe, result)
+		}
+	}
+	for _, format := range []string{string(Yaml), string(Json), string(Binary), string(Dotenv)} {
+		generateCase(format, true)
+		generateCase(strings.ToUpper(format), false)
+	}
 }

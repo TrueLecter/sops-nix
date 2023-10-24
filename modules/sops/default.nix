@@ -5,7 +5,8 @@ with lib;
 let
   cfg = config.sops;
   users = config.users.users;
-  sops-install-secrets = (pkgs.callPackage ../.. {}).sops-install-secrets;
+  sops-install-secrets = cfg.package;
+  sops-install-secrets-check = cfg.validationPackage;
   regularSecrets = lib.filterAttrs (_: v: !v.neededForUsers) cfg.secrets;
   secretsForUsers = lib.filterAttrs (_: v: v.neededForUsers) cfg.secrets;
   defaultSecretsSymlink = "${lib.optionalString pkgs.stdenv.isDarwin "/var"}/run/secrets";
@@ -42,7 +43,7 @@ let
         '';
       };
       format = mkOption {
-        type = types.enum ["yaml" "json" "binary"];
+        type = types.enum ["yaml" "json" "binary" "dotenv" "ini"];
         default = cfg.defaultSopsFormat;
         description = ''
           File format used to decrypt the sops secret.
@@ -66,7 +67,7 @@ let
       group = mkOption {
         type = types.str;
         default = users.${config.owner}.group;
-        defaultText = literalExpression "config.users.users.\${owner}.group";
+        defaultText = literalMD "{option}`config.users.users.\${owner}.group`";
         description = ''
           Group of the file.
         '';
@@ -94,6 +95,15 @@ let
           This works the same way as <xref linkend="opt-systemd.services._name_.restartTriggers" />.
         '';
       };
+      reloadUnits = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "sshd.service" ];
+        description = ''
+          Names of units that should be reloaded when this secret changes.
+          This works the same way as <xref linkend="opt-systemd.services._name_.reloadTriggers" />.
+        '';
+      };
       neededForUsers = mkOption {
         type = types.bool;
         default = false;
@@ -118,13 +128,15 @@ let
       sshKeyPaths = cfg.gnupg.sshKeyPaths;
       ageKeyFile = cfg.age.keyFile;
       ageSshKeyPaths = cfg.age.sshKeyPaths;
+      useTmpfs = cfg.useTmpfs;
+      userMode = false;
       logging = {
         keyImport = builtins.elem "keyImport" cfg.log;
         secretChanges = builtins.elem "secretChanges" cfg.log;
       };
     } // extraJson);
     checkPhase = ''
-      ${sops-install-secrets}/bin/sops-install-secrets -check-mode=${if cfg.validateSopsFiles then "sopsfile" else "manifest"} "$out"
+      ${sops-install-secrets-check}/bin/sops-install-secrets -check-mode=${if cfg.validateSopsFiles then "sopsfile" else "manifest"} "$out"
     '';
   };
 
@@ -209,6 +221,50 @@ in {
       '';
     };
 
+    package = mkOption {
+      type = types.package;
+      default = (pkgs.callPackage ../.. {}).sops-install-secrets;
+      defaultText = literalExpression "(pkgs.callPackage ../.. {}).sops-install-secrets";
+      description = ''
+        sops-install-secrets package to use.
+      '';
+    };
+
+    validationPackage = mkOption {
+      type = types.package;
+      default =
+        if pkgs.stdenv.buildPlatform == pkgs.stdenv.hostPlatform
+          then sops-install-secrets
+          else (pkgs.pkgsBuildHost.callPackage ../.. {}).sops-install-secrets;
+      defaultText = literalExpression "config.sops.package";
+
+      description = ''
+        sops-install-secrets package to use when validating configuration.
+
+        Defaults to sops.package if building natively, and a native version of sops-install-secrets if cross compiling.
+      '';
+    };
+
+    useTmpfs = mkOption {
+      type = types.bool;
+      default = false;
+      description = lib.mdDoc ''
+        Use tmpfs in place of ramfs for secrets storage.
+
+        *WARNING*
+        Enabling this option has the potential to write secrets to disk unencrypted if the tmpfs volume is written to swap. Do not use unless absolutely necessary.
+        
+        When using a swap file or device, consider enabling swap encryption by setting the `randomEncryption.enable` option
+        
+        ```
+        swapDevices = [{
+          device = "/dev/sdXY";
+          randomEncryption.enable = true; 
+        }];
+        ```
+      '';
+    };
+
     age = {
       keyFile = mkOption {
         type = types.nullOr types.path;
@@ -232,7 +288,7 @@ in {
       sshKeyPaths = mkOption {
         type = types.listOf types.path;
         default = defaultImportKeys "ed25519";
-        defaultText = literalDocBook "The ed25519 keys from <option>config.services.openssh.hostKeys</option>";
+        defaultText = literalMD "The ed25519 keys from {option}`config.services.openssh.hostKeys`";
         description = ''
           Paths to ssh keys added as age keys during sops description.
         '';
@@ -252,7 +308,7 @@ in {
       sshKeyPaths = mkOption {
         type = types.listOf types.path;
         default = defaultImportKeys "rsa";
-        defaultText = literalDocBook "The rsa keys from <option>config.services.openssh.hostKeys</option>";
+        defaultText = literalMD "The rsa keys from {option}`config.services.openssh.hostKeys`";
         description = ''
           Path to ssh keys added as GPG keys during sops description.
           This option must be explicitly unset if <literal>config.sops.gnupg.sshKeyPaths</literal> is set.
@@ -261,6 +317,7 @@ in {
     };
   };
   imports = [
+    ./templates
     (mkRenamedOptionModule [ "sops" "gnupgHome" ] [ "sops" "gnupg" "home" ])
     (mkRenamedOptionModule [ "sops" "sshKeyPaths" ] [ "sops" "gnupg" "sshKeyPaths" ])
   ];
@@ -268,7 +325,7 @@ in {
     (mkIf (cfg.secrets != {}) {
       assertions = [{
         assertion = cfg.gnupg.home != null || cfg.gnupg.sshKeyPaths != [] || cfg.age.keyFile != null || cfg.age.sshKeyPaths != [];
-        message = "No key source configurated for sops";
+        message = "No key source configured for sops. Either set services.openssh.enable or set sops.age.keyFile or sops.gnupg.home";
       } {
         assertion = !(cfg.gnupg.home != null && cfg.gnupg.sshKeyPaths != []);
         message = "Exactly one of sops.gnupg.home and sops.gnupg.sshKeyPaths must be set";
